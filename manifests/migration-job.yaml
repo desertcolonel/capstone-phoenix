@@ -2,9 +2,21 @@
 # entrypoint - at 2+ replicas, every Pod starting up would independently
 # race on `alembic upgrade head` against the same database.
 #
-# Now wired as an Argo CD PreSync hook (see annotations below) - Argo runs
-# this automatically before every sync, and BeforeHookCreation deletes the
-# previous run first, so there's no more manual delete-then-reapply dance.
+# Wired as an Argo CD PostSync hook (see annotations below), NOT PreSync -
+# PreSync was tried first and created a real deadlock: the Job needs
+# taskapp-config/taskapp-secret via envFrom, but PreSync hooks run BEFORE
+# Argo applies any regular resources (including the ConfigMap) - so the Job
+# could never succeed, and Argo could never advance past PreSync to create
+# the ConfigMap that would have fixed it. Confirmed the hard way on a live
+# cluster. PostSync runs after Sync-phase resources are applied AND
+# healthy, so the ConfigMap/Secret and Postgres already exist by the time
+# this runs. BeforeHookCreation still deletes the previous run first.
+#
+# Tradeoff worth knowing: backend/frontend can become "Healthy" (probes
+# passing) slightly before migrations finish, since readiness probes don't
+# necessarily require a migrated schema. Brief window of possible errors
+# on schema-dependent endpoints right after a sync - far better than the
+# hard deadlock PreSync caused.
 #
 # For manual/pre-GitOps use, the old workflow still works fine:
 #   kubectl apply -f manifests/migration-job.yaml
@@ -16,7 +28,7 @@ metadata:
   name: taskapp-migrate
   namespace: taskapp
   annotations:
-    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook: PostSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 2
