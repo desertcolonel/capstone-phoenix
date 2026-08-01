@@ -1,0 +1,92 @@
+# k3s bundles a kube-router-based network policy controller, ENABLED BY
+# DEFAULT (confirmed against k3s-io/k3s#1308 and the k3s README's own list
+# of bundled components) - standard NetworkPolicy objects are enforced out
+# of the box. No CNI swap to Calico/Cilium needed, since we never passed
+# --disable-network-policy in the k3s-server install.
+#
+# Verify this is actually true on your cluster before relying on it for
+# grading evidence: apply default-deny below, then try
+# `kubectl run test --rm -it --image=busybox -n taskapp -- wget -T2 postgres:5432`
+# from a Pod that ISN'T backend - it should hang/fail.
+#
+# Scoped to Ingress only (not Egress) - the app has no outbound restrictions
+# to satisfy, and touching Egress risks silently breaking DNS/external
+# calls that were never part of this requirement.
+
+# 1. Default-deny all ingress in the namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: taskapp
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# 2. Postgres: reachable only from backend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-to-postgres
+  namespace: taskapp
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# 3. Backend: reachable only from frontend (its /api proxy)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: taskapp
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 5000
+---
+# 5. cert-manager's temporary ACME HTTP01 solver pod - needed for
+# Let's Encrypt cert issuance/renewal. Without this, default-deny-ingress
+# silently blocks Traefik from handing off the challenge response, and the
+# Certificate stays stuck "pending" indefinitely with no error logged
+# anywhere obvious (confirmed the hard way - 17h stuck on this cluster).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-acme-solver
+  namespace: taskapp
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik

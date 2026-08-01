@@ -4,6 +4,8 @@
 .terraform/
 *.tfvars
 !*.tfvars.example
+*.tfplan
+phoenix-*
 crash.log
 
 # kubeconfig & cluster joins
