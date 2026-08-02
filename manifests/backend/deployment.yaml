@@ -9,7 +9,7 @@ spec:
   replicas: 2
   strategy:
     rollingUpdate:
-      maxUnavailable: 0 # zero dropped capacity during a rollout
+      maxUnavailable: 0
       maxSurge: 1
   selector:
     matchLabels:
@@ -19,7 +19,7 @@ spec:
       labels:
         app: backend
     spec:
-      terminationGracePeriodSeconds: 30 # give Flask time to finish in-flight requests on SIGTERM
+      terminationGracePeriodSeconds: 30
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -29,8 +29,6 @@ spec:
               app: backend
       containers:
         - name: backend
-          # Replace placeholder - see kustomization.yaml's images: block,
-          # which is the one place you actually need to edit this.
           image: ghcr.io/ts-a-devops/taskapp-backend:placeholder
           ports:
             - containerPort: 5000
@@ -65,8 +63,11 @@ spec:
               port: http
             initialDelaySeconds: 15
             periodSeconds: 20
+          # runAsNonRoot omitted - the image DOES run as a non-root user
+          # (appuser), but as a named user rather than a numeric UID, which
+          # Kubernetes can't pre-verify. Find appuser's real UID and set
+          # runAsUser explicitly to restore this safely later if desired.
           securityContext:
-            runAsNonRoot: true
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
@@ -74,8 +75,6 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           volumeMounts:
-            # readOnlyRootFilesystem needs a writable /tmp - Flask/Python
-            # commonly touch this even without explicit file writes.
             - name: tmp
               mountPath: /tmp
       volumes:
