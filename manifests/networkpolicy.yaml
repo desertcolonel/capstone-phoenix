@@ -1,17 +1,7 @@
 # k3s bundles a kube-router-based network policy controller, ENABLED BY
-# DEFAULT (confirmed against k3s-io/k3s#1308 and the k3s README's own list
-# of bundled components) - standard NetworkPolicy objects are enforced out
-# of the box. No CNI swap to Calico/Cilium needed, since we never passed
-# --disable-network-policy in the k3s-server install.
-#
-# Verify this is actually true on your cluster before relying on it for
-# grading evidence: apply default-deny below, then try
-# `kubectl run test --rm -it --image=busybox -n taskapp -- wget -T2 postgres:5432`
-# from a Pod that ISN'T backend - it should hang/fail.
-#
-# Scoped to Ingress only (not Egress) - the app has no outbound restrictions
-# to satisfy, and touching Egress risks silently breaking DNS/external
-# calls that were never part of this requirement.
+# DEFAULT - standard NetworkPolicy objects are enforced out of the box.
+# Scoped to Ingress only (not Egress) - the app has no outbound
+# restrictions to satisfy.
 
 # 1. Default-deny all ingress in the namespace
 apiVersion: networking.k8s.io/v1
@@ -45,6 +35,28 @@ spec:
         - protocol: TCP
           port: 5432
 ---
+# 2b. Postgres: also reachable from the one-off migration Job (different
+# label on purpose so it's never picked up by the backend Service/PDB).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-migration-to-postgres
+  namespace: taskapp
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: taskapp-migrate
+      ports:
+        - protocol: TCP
+          port: 5432
+---
 # 3. Backend: reachable only from frontend (its /api proxy)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -66,11 +78,34 @@ spec:
         - protocol: TCP
           port: 5000
 ---
-# 5. cert-manager's temporary ACME HTTP01 solver pod - needed for
-# Let's Encrypt cert issuance/renewal. Without this, default-deny-ingress
-# silently blocks Traefik from handing off the challenge response, and the
-# Certificate stays stuck "pending" indefinitely with no error logged
-# anywhere obvious (confirmed the hard way - 17h stuck on this cluster).
+# 4. Frontend: reachable only from the ingress controller (Traefik, in
+# kube-system). This is the policy that lets external traffic in at all -
+# missing this produces a 502 despite the Service having healthy endpoints,
+# since Traefik gets blocked at the network layer, not the Service layer.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-frontend
+  namespace: taskapp
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+      ports:
+        - protocol: TCP
+          port: 80
+---
+# 5. cert-manager's temporary ACME HTTP01 solver pod.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
