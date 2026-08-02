@@ -34,3 +34,17 @@ spec:
       selfHeal: true # revert manual kubectl edits back to match git
     syncOptions:
       - CreateNamespace=false # namespace.yaml in manifests/ already owns this
+
+  # The HPA on backend manages replica count live - without this, Argo
+  # and the HPA fight over spec.replicas forever (Synced -> HPA scales ->
+  # OutOfSync -> Argo syncs back to git's replicas: 2 -> HPA scales again).
+  # Confirmed on the cluster: sync status flapping Synced <-> OutOfSync in
+  # a tight loop. This tells Argo to ignore that one field for backend
+  # specifically - everything else about the Deployment is still tracked.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: backend
+      namespace: taskapp
+      jsonPointers:
+        - /spec/replicas
