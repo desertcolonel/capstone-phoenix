@@ -1,0 +1,112 @@
+rogers@ROGERS:~/capstone-phoenix$ kubectl get nodes -o wide
+NAME             STATUS   ROLES           AGE     VERSION        INTERNAL-IP   EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION           CONTAINER-RUNTIME
+ip-10-20-1-166   Ready    control-plane   4d17h   v1.36.0+k3s1   10.20.1.166   <none>        Ubuntu 22.04.5 LTS   6.8.0-1061-aws (amd64)   containerd://2.2.3-k3s1
+ip-10-20-1-78    Ready    <none>          4d17h   v1.36.0+k3s1   10.20.1.78    <none>        Ubuntu 22.04.5 LTS   6.8.0-1061-aws (amd64)   containerd://2.2.3-k3s1
+ip-10-20-2-175   Ready    <none>          4d17h   v1.36.0+k3s1   10.20.2.175   <none>        Ubuntu 22.04.5 LTS   6.8.0-1061-aws (amd64)   containerd://2.2.3-k3s1
+rogers@ROGERS:~/capstone-phoenix$ kubectl get pods -n taskapp -o wide -l app=backend
+NAME                      READY   STATUS    RESTARTS   AGE   IP           NODE             NOMINATED NODE   READINESS GATES
+backend-5f774c745-hgq44   1/1     Running   0          18h   10.42.0.32   ip-10-20-1-166   <none>           <none>
+backend-5f774c745-kqssr   1/1     Running   0          18h   10.42.2.51   ip-10-20-2-175   <none>           <none>
+backend-5f774c745-n9xp2   1/1     Running   0          24h   10.42.2.44   ip-10-20-2-175   <none>           <none>
+backend-5f774c745-q6szw   1/1     Running   0          18h   10.42.1.25   ip-10-20-1-78    <none>           <none>
+backend-5f774c745-sxvk5   1/1     Running   0          18h   10.42.0.31   ip-10-20-1-166   <none>           <none>
+backend-5f774c745-x9cwl   1/1     Running   0          24h   10.42.1.9    ip-10-20-1-78    <none>           <none>
+rogers@ROGERS:~/capstone-phoenix$  kubectl get pods -n taskapp -o wide -l app=frontend
+NAME                       READY   STATUS    RESTARTS   AGE   IP           NODE             NOMINATED NODE   READINESS GATES
+frontend-8c48ddb96-bqj8k   1/1     Running   0          24h   10.42.2.23   ip-10-20-2-175   <none>           <none>
+frontend-8c48ddb96-hlsrx   1/1     Running   0          24h   10.42.0.20   ip-10-20-1-166   <none>           <none>
+rogers@ROGERS:~/capstone-phoenix$ curl -vI https://taskapp.rogers.13.62.208.81.nip.io 2>&1 | grep -A5 "Server certificate"
+* Server certificate:
+*  subject: CN=taskapp.rogers.13.62.208.81.nip.io
+*  start date: Aug  1 22:29:26 2026 GMT
+*  expire date: Oct 30 22:29:25 2026 GMT
+*  subjectAltName: host "taskapp.rogers.13.62.208.81.nip.io" matched cert's "taskapp.rogers.13.62.208.81.nip.io"
+*  issuer: C=US; O=Let's Encrypt; CN=YR1
+rogers@ROGERS:~/capstone-phoenix$ kubectl get hpa backend -n taskapp -w
+NAME      REFERENCE            TARGETS                         MINPODS   MAXPODS   REPLICAS   AGE
+backend   Deployment/backend   cpu: 1%/70%, memory: 124%/80%   2         6         6          41h
+backend   Deployment/backend   cpu: 1%/70%, memory: 124%/80%   2         6         6          41h
+backend   Deployment/backend   cpu: 1%/70%, memory: 124%/80%   2         6         6          41h
+^Crogers@ROGERS:~/capstone-phoenixkubectl get application taskapp -n argocdcd
+NAME      SYNC STATUS   HEALTH STATUS
+taskapp   Synced        Healthy
+rogers@ROGERS:~/capstone-phoenix$ argocd app get taskapp
+argocd: command not found
+rogers@ROGERS:~/capstone-phoenix$ kubectl get application taskapp -n argocd
+NAME      SYNC STATUS   HEALTH STATUS
+taskapp   Synced        Healthy
+rogers@ROGERS:~/capstone-phoenix$ kubectl get application taskapp -n argocd -w
+NAME      SYNC STATUS   HEALTH STATUS
+taskapp   Synced        Healthy
+^Crogers@ROGERS:~/capstone-phoenixkubectl get pods -n taskapp -l app=frontend -w
+
+
+#### showing the process of scaling up the frontend replicas from 2 to 3 as new a pod is created
+NAME                       READY   STATUS    RESTARTS   AGE
+frontend-8c48ddb96-bqj8k   1/1     Running   0          24h
+frontend-8c48ddb96-hlsrx   1/1     Running   0          24h
+frontend-8c48ddb96-2sxjw   0/1     Pending   0          0s
+frontend-8c48ddb96-2sxjw   0/1     Pending   0          0s
+frontend-8c48ddb96-2sxjw   0/1     ContainerCreating   0          0s
+frontend-8c48ddb96-2sxjw   0/1     Running             0          1s
+frontend-8c48ddb96-2sxjw   0/1     Running             0          3s
+frontend-8c48ddb96-2sxjw   0/1     Running             0          3s
+frontend-8c48ddb96-2sxjw   1/1     Running             0          4s
+^Crogers@ROGERS:~/capstone-phoenixkubectl get application taskapp -n argocd -w
+NAME      SYNC STATUS   HEALTH STATUS
+taskapp   Synced        Healthy
+
+
+### showing the process of scaling down the frontend replicas from 3 to 2 pods
+^Crogers@ROGERS:~/capstone-phoenixkubectl get pods -n taskapp -l app=frontend -w
+NAME                       READY   STATUS    RESTARTS   AGE
+frontend-8c48ddb96-2sxjw   1/1     Running   0          4m46s
+frontend-8c48ddb96-bqj8k   1/1     Running   0          24h
+frontend-8c48ddb96-hlsrx   1/1     Running   0          24h
+frontend-8c48ddb96-2sxjw   1/1     Terminating   0          8m6s
+frontend-8c48ddb96-2sxjw   1/1     Terminating   0          8m6s
+frontend-8c48ddb96-2sxjw   0/1     Completed     0          8m7s
+frontend-8c48ddb96-2sxjw   0/1     Completed     0          8m8s
+frontend-8c48ddb96-2sxjw   0/1     Completed     0          8m8s
+frontend-8c48ddb96-2sxjw   0/1     Completed     0          8m8s
+^Crogers@ROGERS:~/capstone-phoenix$ kubectl get pods -n taskapp -l app=frontend -w
+NAME                       READY   STATUS    RESTARTS   AGE
+frontend-8c48ddb96-bqj8k   1/1     Running   0          25h
+frontend-8c48ddb96-hlsrx   1/1     Running   0          25h
+^Crogers@ROGERS:~/capstone-phoenix$ 
+
+
+
+### showing when I used git to scale up the frontend replicas from 2 to 3 and also when I scaled the frontend replicas from 3 back to 2
+
+
+rogers@ROGERS:~/capstone-phoenix/infra/ansible$ cd ../..
+rogers@ROGERS:~/capstone-phoenix$ git add manifests/frontend/deployment.yaml
+rogers@ROGERS:~/capstone-phoenix$ git commit -m "scale frontend to 3 replicas"
+[main cc8847d] scale frontend to 3 replicas
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+rogers@ROGERS:~/capstone-phoenix$ git push
+Enumerating objects: 9, done.
+Counting objects: 100% (9/9), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (5/5), done.
+Writing objects: 100% (5/5), 452 bytes | 452.00 KiB/s, done.
+Total 5 (delta 3), reused 0 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (3/3), completed with 3 local objects.
+To https://github.com/desertcolonel/capstone-phoenix.git
+   dc4d229..cc8847d  main -> main
+rogers@ROGERS:~/capstone-phoenix$ git add manifests/frontend/deployment.yaml
+rogers@ROGERS:~/capstone-phoenix$ git commit -m "scale down frontend to 2 replicas"
+[main ee4c442] scale down frontend to 2 replicas
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+rogers@ROGERS:~/capstone-phoenix$ git push
+Enumerating objects: 9, done.
+Counting objects: 100% (9/9), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (5/5), done.
+Writing objects: 100% (5/5), 451 bytes | 451.00 KiB/s, done.
+Total 5 (delta 3), reused 0 (delta 0), pack-reused 0
+remote: Resolving deltas: 100% (3/3), completed with 3 local objects.
+To https://github.com/desertcolonel/capstone-phoenix.git
+   cc8847d..ee4c442  main -> main
+rogers@ROGERS:~/capstone-phoenix$ 
